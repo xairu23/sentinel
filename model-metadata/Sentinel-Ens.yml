@@ -1,0 +1,27 @@
+# Team file for the CDC FluSight hub. Copy to model-metadata/Sentinel-Ens.yml in the hub fork
+# and open a pull request BEFORE (or with) the first forecast. Fill the two TODO lines first.
+team_name: "Sentinel"
+team_abbr: "Sentinel"
+model_name: "Sentinel ensemble"
+model_abbr: "Ens"
+model_version: "3.6"
+model_contributors: [
+  {
+    "name": "TODO full name",
+    "affiliation": "Independent",
+    "email": "TODO email"
+  }
+]
+website_url: "https://github.com/xairu23/sentinel"
+repo_url: "https://github.com/xairu23/sentinel"
+license: "CC-BY-4.0"
+designated_model: true
+designated_targets: ["wk inc flu hosp", "wk flu hosp rate change"]
+baseline_model: false
+team_funding: "None"
+data_inputs: "NHSN weekly influenza hospital admissions and their archived weekly versions (hub target data); NSSP share of ED visits for influenza (hub target data); CDC NWSS influenza A wastewater; Open-Meteo daily temperature and humidity; historical FluSurv-NET rates and ILINet x WHO/NREVSS ILI+ (2010-2022, via the UMass flusion repository)."
+methods: "Equal-weight quantile average of three model families: pooled log-growth regressions with ED, wastewater and weather signals; history-trained gradient-boosted quantile trees; quantile autoregression."
+methods_long: "Three model families, averaged quantile by quantile with equal weights. (1) Eight pooled least-squares regressions (every combination of three signals: NSSP ED-visit share, NWSS wastewater, cold/dry weather anomaly) predict the k-week-ahead change in log admissions from recent weekly log changes, time of year, level relative to the location's usual level, peak-dampening terms and cumulative admissions this season per 100k; recent weeks are weighted more (half-life 52 weeks); intervals come from empirical residual quantiles, widened for volatile locations and scaled half-way to each location's own error level. (2) Gradient-boosted quantile trees (LightGBM, after UMass flusion) trained on NHSN plus ~10 seasons of FluSurv-NET and ILI+ history on a common fourth-root scale, bagged over seasons, with extra inputs: the average level and recent slope of each location's bordering states, the national average level and slope, the location's level relative to the national average, and its position in the season so far (highest level so far, distance below it, weeks since it), and the location's NSSP ED flu share (level relative to its usual level, 3- and 5-week slopes, 1-week change, and the 2-week change of ED share relative to admissions). (3) Linear quantile autoregression on the same common scale (after the published CMU-TimeSeries method), fitted on the same time of year (+/-3 weeks) across all past years, one regression per quantile. Rate-change category probabilities are derived from the same 23 quantiles (piecewise-linear CDF). The newest reported week is corrected for typical upward revisions learned from the hub's archived data versions (input of the regressions and the trees). ED visits are used for the same week, wastewater one week behind. Before averaging, the lower half of the autoregression's quantiles is pulled to 40% of its distance from its median, because its lower tail was far too long in past seasons. In locations with fewer than 200 admissions in the newest week, once influenza is at least 1% of ED visits, the whole forecast is moved half-way (on the log scale) toward the newest week implied by the ED share and the location's admissions-to-ED ratio over the previous four weeks. All design choices were evaluated in a real-time replay of the 2023-24 to 2025-26 seasons using data as published each week. Code and evaluation: https://github.com/xairu23/sentinel"
+backfill_adjustment: "Yes: the newest reported week is scaled by its typical later revision, learned from the hub's archived versions published before the forecast date."
+ensemble_of_models: true
+ensemble_of_hub_models: false

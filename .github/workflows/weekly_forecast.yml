@@ -1,0 +1,69 @@
+# Sentinel autopilot: every Wednesday, build + validate this week's forecast and (when switched on) submit it.
+#
+# Safety switch: nothing is sent to the CDC unless the repository variable SUBMIT_TO_HUB is set to "true"
+# (Settings > Secrets and variables > Actions > Variables). Until then it only builds, validates and saves the file.
+#
+# To submit automatically you also need a secret HUB_TOKEN: a GitHub fine-grained token with
+# "Contents: read and write" + "Pull requests: read and write" on your fork xairu23/FluSight-forecast-hub.
+# If any step fails, GitHub emails the repository owner, so a broken week never goes unnoticed.
+name: weekly-forecast
+
+on:
+  schedule:
+    - cron: "0 21 * * 3"   # Wednesdays 21:00 UTC (5 PM US Eastern), before the 11 PM ET deadline
+  workflow_dispatch: {}      # "Run workflow" button for manual runs
+
+permissions:
+  contents: write
+
+jobs:
+  forecast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install -r requirements.txt
+
+      - name: Download data, build and validate the forecast
+        env:
+          GBQ_THREADS: "4"   # GitHub's runners have 4 cores; the tree model is the slow part
+          SUBMIT_TO_HUB: ${{ vars.SUBMIT_TO_HUB }}   # if on, the file is also checked against the hub's round rules
+        run: python scripts/weekly_run.py
+
+      - name: Save the forecast file in this repository
+        run: |
+          git config user.name "sentinel-bot"
+          git config user.email "sentinel-bot@users.noreply.github.com"
+          git add -A submission/output submission/shadow figures data/history/weather_daily.csv backtest/live_scoreboard.md
+          git commit -m "Forecast for reference date $(ls submission/output | tail -1 | cut -c1-10)" || echo "nothing new"
+          git push
+
+      - name: Submit to the CDC FluSight hub (only if switched on)
+        if: ${{ vars.SUBMIT_TO_HUB == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.HUB_TOKEN }}
+        run: |
+          REF=$(date -u -d "saturday" +%F)        # this week's round (the coming Saturday)
+          NAME="${REF}-Sentinel-Ens.csv"
+          FILE="submission/output/${NAME}"
+          if [ ! -f "$FILE" ]; then echo "No file for round $REF (off-season?): nothing to submit."; exit 0; fi
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/xairu23/FluSight-forecast-hub.git" hub
+          cd hub
+          git remote add upstream https://github.com/cdcepi/FluSight-forecast-hub.git
+          git fetch --depth 1 upstream main
+          git checkout -b "sentinel-$REF" upstream/main
+          mkdir -p model-output/Sentinel-Ens
+          cp "../$FILE" model-output/Sentinel-Ens/
+          git config user.name "sentinel-bot"
+          git config user.email "sentinel-bot@users.noreply.github.com"
+          git add model-output/Sentinel-Ens/"$NAME"
+          git commit -m "Sentinel-Ens forecast $REF"
+          git push origin "sentinel-$REF"
+          gh pr create --repo cdcepi/FluSight-forecast-hub --head "xairu23:sentinel-$REF" --base main \
+            --title "Sentinel-Ens $REF" --body "Weekly submission from team Sentinel (model Sentinel-Ens)."
